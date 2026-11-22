@@ -1,0 +1,435 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user account and RBAC role assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 160 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["owner", "front_desk", "bar_staff", "member"] },
+        "linkedMemberId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Club member profile with tier entitlements, expiry tracking, and club history counters.",
+      "type": "object",
+      "properties": {
+        "memberCode": { "type": "string", "minLength": 4, "maxLength": 24, "pattern": "^[A-Z0-9\\-]+$" },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 160 },
+        "phone": { "type": "string", "minLength": 10, "maxLength": 20, "pattern": "^[0-9+\\-\\s]+$" },
+        "dob": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "tier": { "type": "string", "enum": ["gold", "silver", "junior"] },
+        "status": { "type": "string", "enum": ["active", "expiring_soon", "expired", "suspended"] },
+        "startDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "expiryDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "totalSpentInr": { "type": "number" },
+        "visitsCount": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["memberCode", "fullName", "email", "phone", "tier", "status", "startDate", "expiryDate", "totalSpentInr", "visitsCount", "createdAt", "updatedAt"]
+    },
+    "Court": {
+      "title": "Court",
+      "description": "Bookable club court across Tennis, Cricket, Padel, and Badminton.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "sport": { "type": "string", "enum": ["tennis", "cricket", "padel", "badminton"] },
+        "surface": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "indoor": { "type": "boolean" },
+        "hourlyRateInr": { "type": "number" },
+        "active": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "sport", "surface", "indoor", "hourlyRateInr", "active", "updatedAt"]
+    },
+    "PublicScheduleSlot": {
+      "title": "PublicScheduleSlot",
+      "description": "Sanitized, PII-free slot availability marker for public weekly availability display.",
+      "type": "object",
+      "properties": {
+        "courtId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "courtName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "sport": { "type": "string", "enum": ["tennis", "cricket", "padel", "badminton"] },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "startTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "endTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "slotType": { "type": "string", "enum": ["booking", "social"] },
+        "status": { "type": "string", "enum": ["occupied", "social_open", "cancelled"] },
+        "spotsFilled": { "type": "number" },
+        "maxSpots": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courtId", "courtName", "sport", "date", "startTime", "endTime", "slotType", "status", "updatedAt"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "1-hour court reservation with tier-adjusted INR pricing and atomic slot locks.",
+      "type": "object",
+      "properties": {
+        "courtId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "courtName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "sport": { "type": "string", "enum": ["tennis", "cricket", "padel", "badminton"] },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "startTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "endTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "memberId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "playerName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "playerPhone": { "type": "string", "maxLength": 20 },
+        "tier": { "type": "string", "enum": ["gold", "silver", "junior", "walk_in"] },
+        "baseRateInr": { "type": "number" },
+        "discountInr": { "type": "number" },
+        "finalAmountInr": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["upi", "card", "cash", "included"] },
+        "status": { "type": "string", "enum": ["confirmed", "cancelled", "completed"] },
+        "cancellationReason": { "type": "string", "maxLength": 200 },
+        "lockIds": { "type": "array", "description": "Exactly two 30-minute lock IDs for a 1-hour session." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courtId", "courtName", "sport", "date", "startTime", "endTime", "userId", "playerName", "tier", "baseRateInr", "discountInr", "finalAmountInr", "paymentMethod", "status", "lockIds", "createdAt", "updatedAt"]
+    },
+    "SlotLock": {
+      "title": "SlotLock",
+      "description": "Deterministic 30-minute atomic court lock preventing double-bookings.",
+      "type": "object",
+      "properties": {
+        "courtId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "slotTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "bookingId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["courtId", "date", "slotTime", "bookingId", "userId", "createdAt"]
+    },
+    "SocialSession": {
+      "title": "SocialSession",
+      "description": "Friday night Social Play shared-court open session.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "courtId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "courtName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "sport": { "type": "string", "enum": ["tennis", "cricket", "padel", "badminton"] },
+        "date": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "startTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "endTime": { "type": "string", "minLength": 5, "maxLength": 5, "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "feeInr": { "type": "number" },
+        "maxPlayers": { "type": "number" },
+        "spotsFilled": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "full", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "courtId", "courtName", "sport", "date", "startTime", "endTime", "feeInr", "maxPlayers", "spotsFilled", "status", "createdAt", "updatedAt"]
+    },
+    "SocialParticipant": {
+      "title": "SocialParticipant",
+      "description": "Individual member or guest registration in a Friday Social Play session.",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "playerName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "tier": { "type": "string", "enum": ["gold", "silver", "junior", "walk_in"] },
+        "paidInr": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["upi", "card", "cash", "included"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "userId", "playerName", "tier", "paidInr", "paymentMethod", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Gear Shop SKU shared between Front Desk Counter POS and Online Storefront.",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[A-Z0-9\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["rackets", "balls", "shoes", "accessories", "apparel"] },
+        "brand": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "priceInr": { "type": "number" },
+        "stock": { "type": "number" },
+        "lowStockThreshold": { "type": "number" },
+        "description": { "type": "string", "maxLength": 400 },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sku", "name", "category", "brand", "priceInr", "stock", "lowStockThreshold", "active", "updatedAt"]
+    },
+    "ShopOrder": {
+      "title": "ShopOrder",
+      "description": "Counter POS or online Click & Collect / Home Delivery gear order.",
+      "type": "object",
+      "properties": {
+        "orderCode": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "tier": { "type": "string", "enum": ["gold", "silver", "junior", "walk_in"] },
+        "channel": { "type": "string", "enum": ["counter", "online"] },
+        "fulfillment": { "type": "string", "enum": ["counter_pickup", "club_collect", "delivery"] },
+        "deliveryAddress": { "type": "string", "maxLength": 300 },
+        "items": { "type": "array", "description": "Bounded list of up to 20 purchased SKUs." },
+        "subtotalInr": { "type": "number" },
+        "discountInr": { "type": "number" },
+        "gstInr": { "type": "number" },
+        "totalInr": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["upi", "card", "cash"] },
+        "status": { "type": "string", "enum": ["confirmed", "ready_for_pickup", "dispatched", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderCode", "userId", "customerName", "tier", "channel", "fulfillment", "items", "subtotalInr", "discountInr", "gstInr", "totalInr", "paymentMethod", "status", "createdAt", "updatedAt"]
+    },
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "Bar & Cafeteria food and beverage catalog item.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "category": { "type": "string", "enum": ["drinks", "coffee", "snacks", "meals"] },
+        "priceInr": { "type": "number" },
+        "prepMins": { "type": "number" },
+        "available": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "priceInr", "prepMins", "available", "updatedAt"]
+    },
+    "BarOrder": {
+      "title": "BarOrder",
+      "description": "Bar table order, open member tab, and kitchen display ticket.",
+      "type": "object",
+      "properties": {
+        "ticketCode": { "type": "string", "minLength": 4, "maxLength": 24 },
+        "tableNumber": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "shiftId": { "type": "string", "maxLength": 128 },
+        "memberId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "guestName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "tier": { "type": "string", "enum": ["gold", "silver", "junior", "walk_in"] },
+        "items": { "type": "array", "description": "Bounded list of up to 30 ordered items." },
+        "subtotalInr": { "type": "number" },
+        "discountInr": { "type": "number" },
+        "gstInr": { "type": "number" },
+        "totalInr": { "type": "number" },
+        "kitchenStatus": { "type": "string", "enum": ["queued", "preparing", "ready", "served"] },
+        "tabStatus": { "type": "string", "enum": ["open", "settled", "voided"] },
+        "paymentMethod": { "type": "string", "enum": ["upi", "card", "cash", "unpaid"] },
+        "staffUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ticketCode", "tableNumber", "guestName", "tier", "items", "subtotalInr", "discountInr", "gstInr", "totalInr", "kitchenStatus", "tabStatus", "paymentMethod", "staffUid", "createdAt", "updatedAt"]
+    },
+    "BarShift": {
+      "title": "BarShift",
+      "description": "Bar staff shift session tracking opening float and end-of-day Cash/Card/UPI earnings.",
+      "type": "object",
+      "properties": {
+        "staffUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "staffName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "openingFloatInr": { "type": "number" },
+        "cashTotalInr": { "type": "number" },
+        "cardTotalInr": { "type": "number" },
+        "upiTotalInr": { "type": "number" },
+        "ordersCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "notes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["staffUid", "staffName", "dateKey", "openingFloatInr", "cashTotalInr", "cardTotalInr", "upiTotalInr", "ordersCount", "status", "createdAt", "updatedAt"]
+    },
+    "Enquiry": {
+      "title": "Enquiry",
+      "description": "Public visitor trial session booking or membership enquiry feeding the Staff CRM pipeline.",
+      "type": "object",
+      "properties": {
+        "referenceCode": { "type": "string", "minLength": 4, "maxLength": 24, "pattern": "^[A-Z0-9\\-]+$" },
+        "enquiryType": { "type": "string", "enum": ["trial", "enquiry"] },
+        "visitorName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "minLength": 5, "maxLength": 160 },
+        "phone": { "type": "string", "minLength": 10, "maxLength": 20, "pattern": "^[0-9+\\-\\s]+$" },
+        "interestedSport": { "type": "string", "enum": ["tennis", "cricket", "padel", "badminton", "all"] },
+        "interestedTier": { "type": "string", "enum": ["gold", "silver", "junior", "undecided"] },
+        "preferredDate": { "type": "string", "maxLength": 10 },
+        "preferredSlot": { "type": "string", "maxLength": 20 },
+        "message": { "type": "string", "maxLength": 600 },
+        "stage": { "type": "string", "enum": ["new", "contacted", "quote_sent", "converted", "closed"] },
+        "quotedAmountInr": { "type": "number" },
+        "staffNotes": { "type": "string", "maxLength": 600 },
+        "convertedMemberId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["referenceCode", "enquiryType", "visitorName", "email", "phone", "interestedSport", "interestedTier", "stage", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Unified financial ledger entry consolidating Courts, Shop, Bar, and Membership/Corporate Invoices.",
+      "type": "object",
+      "properties": {
+        "source": { "type": "string", "enum": ["court", "shop", "bar", "membership", "corporate"] },
+        "paymentMethod": { "type": "string", "enum": ["upi", "card", "cash", "bank_transfer"] },
+        "subtotalInr": { "type": "number" },
+        "discountInr": { "type": "number" },
+        "gstInr": { "type": "number" },
+        "totalInr": { "type": "number" },
+        "referenceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "dateKey": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "recordedByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["source", "paymentMethod", "subtotalInr", "discountInr", "gstInr", "totalInr", "referenceId", "description", "dateKey", "recordedByUid", "createdAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Membership or Business/Corporate client invoice with GST calculation.",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "clientType": { "type": "string", "enum": ["member", "corporate"] },
+        "clientName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "clientEmail": { "type": "string", "format": "email", "minLength": 5, "maxLength": 160 },
+        "gstin": { "type": "string", "maxLength": 20 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "minLength": 2, "maxLength": 240 },
+        "subtotalInr": { "type": "number" },
+        "gstRatePercent": { "type": "number" },
+        "gstInr": { "type": "number" },
+        "totalInr": { "type": "number" },
+        "dueDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "status": { "type": "string", "enum": ["draft", "sent", "paid", "overdue"] },
+        "paymentMethod": { "type": "string", "enum": ["upi", "card", "cash", "bank_transfer", "unpaid"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "clientType", "clientName", "clientEmail", "description", "subtotalInr", "gstRatePercent", "gstInr", "totalInr", "dueDate", "status", "paymentMethod", "createdAt", "updatedAt"]
+    },
+    "StaffRecord": {
+      "title": "StaffRecord",
+      "description": "Club employee record for shift scheduling and monthly INR payroll.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "minLength": 5, "maxLength": 160 },
+        "department": { "type": "string", "enum": ["front_desk", "bar_kitchen", "coaching", "maintenance", "management"] },
+        "shiftSlot": { "type": "string", "minLength": 3, "maxLength": 60 },
+        "monthlySalaryInr": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "on_leave", "inactive"] },
+        "lastPaidMonth": { "type": "string", "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "email", "department", "shiftSlot", "monthlySalaryInr", "status", "createdAt", "updatedAt"]
+    },
+    "LeaveRequest": {
+      "title": "LeaveRequest",
+      "description": "Employee leave request awaiting Owner approval or rejection.",
+      "type": "object",
+      "properties": {
+        "staffUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "staffName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "startDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "endDate": { "type": "string", "minLength": 10, "maxLength": 10, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "daysCount": { "type": "number" },
+        "reason": { "type": "string", "minLength": 3, "maxLength": 300 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "reviewerNotes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["staffUid", "staffName", "startDate", "endDate", "daysCount", "reason", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User authentication profiles and RBAC roles."
+    },
+    "/members/{memberId}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Club member directory, tiers, expiry tracking, and club history."
+    },
+    "/courts/{courtId}": {
+      "schema": { "$ref": "#/entities/Court" },
+      "description": "Tennis, Cricket, Padel, and Badminton court configurations."
+    },
+    "/publicSchedule/{slotId}": {
+      "schema": { "$ref": "#/entities/PublicScheduleSlot" },
+      "description": "Sanitized public availability markers without member PII."
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Member and walk-in court bookings."
+    },
+    "/slotLocks/{lockId}": {
+      "schema": { "$ref": "#/entities/SlotLock" },
+      "description": "Deterministic 30-minute court slot locks preventing double-booking."
+    },
+    "/socialSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/SocialSession" },
+      "description": "Friday night Social Play shared court sessions."
+    },
+    "/socialSessions/{sessionId}/participants/{participantId}": {
+      "schema": { "$ref": "#/entities/SocialParticipant" },
+      "description": "Participants enrolled in a Friday Social Play session."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Unified Gear Shop inventory shared across counter POS and online storefront."
+    },
+    "/shopOrders/{orderId}": {
+      "schema": { "$ref": "#/entities/ShopOrder" },
+      "description": "Counter POS and online Click & Collect / Home Delivery orders."
+    },
+    "/menuItems/{itemId}": {
+      "schema": { "$ref": "#/entities/MenuItem" },
+      "description": "Bar and cafeteria food & drink menu items."
+    },
+    "/barOrders/{orderId}": {
+      "schema": { "$ref": "#/entities/BarOrder" },
+      "description": "Bar table orders, open member tabs, and live kitchen queue tickets."
+    },
+    "/barShifts/{shiftId}": {
+      "schema": { "$ref": "#/entities/BarShift" },
+      "description": "Bar staff shift logs and end-of-day earnings reconciliation."
+    },
+    "/enquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/Enquiry" },
+      "description": "Public visitor trial session requests and enquiries for Staff Lead CRM."
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Unified financial revenue ledger across all club streams."
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Membership and corporate/business client invoices."
+    },
+    "/staffRecords/{staffId}": {
+      "schema": { "$ref": "#/entities/StaffRecord" },
+      "description": "Employee directory, shift schedules, and payroll salaries."
+    },
+    "/leaveRequests/{leaveId}": {
+      "schema": { "$ref": "#/entities/LeaveRequest" },
+      "description": "Employee leave applications and Owner approval statuses."
+    }
+  }
+}

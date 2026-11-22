@@ -1,0 +1,814 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Auth and role helper functions
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.firebase.sign_in_provider == 'password'
+      );
+    }
+
+    function isBootstrappedOwner() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'sahprince4554@gmail.com';
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function hasUserDoc() {
+      return isVerified() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isOwner() {
+      return isBootstrappedOwner() || (hasUserDoc() && getUserRole() == 'owner');
+    }
+
+    function isFrontDesk() {
+      return isOwner() || (hasUserDoc() && getUserRole() == 'front_desk');
+    }
+
+    function isBarStaff() {
+      return isOwner() || (hasUserDoc() && getUserRole() == 'bar_staff');
+    }
+
+    function isAnyStaff() {
+      return isOwner() || (hasUserDoc() && (getUserRole() == 'front_desk' || getUserRole() == 'bar_staff'));
+    }
+
+    function isNonEmptyString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isOptionalString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isDateKey(val) {
+      return val is string && val.size() == 10 && val.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isTimeSlot(val) {
+      return val is string && val.size() == 5 && val.matches('^[0-9]{2}:[0-9]{2}$');
+    }
+
+    function isValidSport(val) {
+      return val in ['tennis', 'cricket', 'padel', 'badminton'];
+    }
+
+    function isValidTier(val) {
+      return val in ['gold', 'silver', 'junior'];
+    }
+
+    function isValidPlayerTier(val) {
+      return val in ['gold', 'silver', 'junior', 'walk_in'];
+    }
+
+    function isNonNegativeNumber(val, maxVal) {
+      return val is number && val >= 0 && val <= maxVal;
+    }
+
+    // Document schema validators
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'linkedMemberId', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isNonEmptyString(data.email, 3, 160)
+        && isNonEmptyString(data.displayName, 1, 100)
+        && isOptionalString(data, 'photoURL', 500)
+        && data.role in ['owner', 'front_desk', 'bar_staff', 'member']
+        && isOptionalString(data, 'linkedMemberId', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMember(data) {
+      return data.keys().hasAll(['memberCode', 'fullName', 'email', 'phone', 'tier', 'status', 'startDate', 'expiryDate', 'totalSpentInr', 'visitsCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['memberCode', 'fullName', 'email', 'phone', 'dob', 'tier', 'status', 'startDate', 'expiryDate', 'userId', 'totalSpentInr', 'visitsCount', 'notes', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.memberCode, 4, 24)
+        && data.memberCode.matches('^[A-Z0-9\\-]+$')
+        && isNonEmptyString(data.fullName, 2, 100)
+        && isNonEmptyString(data.email, 3, 160)
+        && isNonEmptyString(data.phone, 10, 20)
+        && data.phone.matches('^[0-9+\\-\\s]+$')
+        && (!('dob' in data) || data.dob == '' || isDateKey(data.dob))
+        && isValidTier(data.tier)
+        && data.status in ['active', 'expiring_soon', 'expired', 'suspended']
+        && isDateKey(data.startDate)
+        && isDateKey(data.expiryDate)
+        && isOptionalString(data, 'userId', 128)
+        && isNonNegativeNumber(data.totalSpentInr, 100000000)
+        && isNonNegativeNumber(data.visitsCount, 100000)
+        && isOptionalString(data, 'notes', 500)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCourt(data) {
+      return data.keys().hasAll(['name', 'sport', 'surface', 'indoor', 'hourlyRateInr', 'active', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'sport', 'surface', 'indoor', 'hourlyRateInr', 'active', 'notes', 'updatedAt'])
+        && isNonEmptyString(data.name, 2, 80)
+        && isValidSport(data.sport)
+        && isNonEmptyString(data.surface, 2, 60)
+        && data.indoor is bool
+        && isNonNegativeNumber(data.hourlyRateInr, 50000)
+        && data.active is bool
+        && isOptionalString(data, 'notes', 300)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicScheduleSlot(data) {
+      return data.keys().hasAll(['courtId', 'courtName', 'sport', 'date', 'startTime', 'endTime', 'slotType', 'status', 'updatedAt'])
+        && data.keys().hasOnly(['courtId', 'courtName', 'sport', 'date', 'startTime', 'endTime', 'slotType', 'status', 'spotsFilled', 'maxSpots', 'updatedAt'])
+        && isValidId(data.courtId)
+        && isNonEmptyString(data.courtName, 2, 80)
+        && isValidSport(data.sport)
+        && isDateKey(data.date)
+        && isTimeSlot(data.startTime)
+        && isTimeSlot(data.endTime)
+        && data.slotType in ['booking', 'social']
+        && data.status in ['occupied', 'social_open', 'cancelled']
+        && (!('spotsFilled' in data) || isNonNegativeNumber(data.spotsFilled, 100))
+        && (!('maxSpots' in data) || isNonNegativeNumber(data.maxSpots, 100))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['courtId', 'courtName', 'sport', 'date', 'startTime', 'endTime', 'userId', 'playerName', 'tier', 'baseRateInr', 'discountInr', 'finalAmountInr', 'paymentMethod', 'status', 'lockIds', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['courtId', 'courtName', 'sport', 'date', 'startTime', 'endTime', 'memberId', 'userId', 'playerName', 'playerPhone', 'tier', 'baseRateInr', 'discountInr', 'finalAmountInr', 'paymentMethod', 'status', 'cancellationReason', 'lockIds', 'createdAt', 'updatedAt'])
+        && isValidId(data.courtId)
+        && isNonEmptyString(data.courtName, 2, 80)
+        && isValidSport(data.sport)
+        && isDateKey(data.date)
+        && isTimeSlot(data.startTime)
+        && isTimeSlot(data.endTime)
+        && isOptionalString(data, 'memberId', 128)
+        && isValidId(data.userId)
+        && isNonEmptyString(data.playerName, 2, 100)
+        && isOptionalString(data, 'playerPhone', 20)
+        && isValidPlayerTier(data.tier)
+        && isNonNegativeNumber(data.baseRateInr, 50000)
+        && isNonNegativeNumber(data.discountInr, 50000)
+        && isNonNegativeNumber(data.finalAmountInr, 50000)
+        && data.paymentMethod in ['upi', 'card', 'cash', 'included']
+        && data.status in ['confirmed', 'cancelled', 'completed']
+        && isOptionalString(data, 'cancellationReason', 200)
+        && data.lockIds is list && data.lockIds.size() == 2 && data.lockIds[0] is string && data.lockIds[1] is string
+        && data.lockIds[0].size() <= 128 && data.lockIds[1].size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSlotLock(data) {
+      return data.keys().hasAll(['courtId', 'date', 'slotTime', 'bookingId', 'userId', 'createdAt'])
+        && data.keys().hasOnly(['courtId', 'date', 'slotTime', 'bookingId', 'userId', 'createdAt'])
+        && isValidId(data.courtId)
+        && isDateKey(data.date)
+        && isTimeSlot(data.slotTime)
+        && isValidId(data.bookingId)
+        && isValidId(data.userId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSocialSession(data) {
+      return data.keys().hasAll(['title', 'courtId', 'courtName', 'sport', 'date', 'startTime', 'endTime', 'feeInr', 'maxPlayers', 'spotsFilled', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['title', 'courtId', 'courtName', 'sport', 'date', 'startTime', 'endTime', 'feeInr', 'maxPlayers', 'spotsFilled', 'status', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.title, 3, 120)
+        && isValidId(data.courtId)
+        && isNonEmptyString(data.courtName, 2, 80)
+        && isValidSport(data.sport)
+        && isDateKey(data.date)
+        && isTimeSlot(data.startTime)
+        && isTimeSlot(data.endTime)
+        && isNonNegativeNumber(data.feeInr, 10000)
+        && isNonNegativeNumber(data.maxPlayers, 64)
+        && isNonNegativeNumber(data.spotsFilled, 64)
+        && data.spotsFilled <= data.maxPlayers
+        && data.status in ['open', 'full', 'completed', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSocialParticipant(data) {
+      return data.keys().hasAll(['sessionId', 'userId', 'playerName', 'tier', 'paidInr', 'paymentMethod', 'createdAt'])
+        && data.keys().hasOnly(['sessionId', 'userId', 'playerName', 'tier', 'paidInr', 'paymentMethod', 'createdAt'])
+        && isValidId(data.sessionId)
+        && isValidId(data.userId)
+        && isNonEmptyString(data.playerName, 2, 100)
+        && isValidPlayerTier(data.tier)
+        && isNonNegativeNumber(data.paidInr, 10000)
+        && data.paymentMethod in ['upi', 'card', 'cash', 'included']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['sku', 'name', 'category', 'brand', 'priceInr', 'stock', 'lowStockThreshold', 'active', 'updatedAt'])
+        && data.keys().hasOnly(['sku', 'name', 'category', 'brand', 'priceInr', 'stock', 'lowStockThreshold', 'description', 'active', 'updatedAt'])
+        && isNonEmptyString(data.sku, 3, 32)
+        && data.sku.matches('^[A-Z0-9\\-]+$')
+        && isNonEmptyString(data.name, 2, 120)
+        && data.category in ['rackets', 'balls', 'shoes', 'accessories', 'apparel']
+        && isNonEmptyString(data.brand, 2, 60)
+        && isNonNegativeNumber(data.priceInr, 500000)
+        && isNonNegativeNumber(data.stock, 10000)
+        && isNonNegativeNumber(data.lowStockThreshold, 1000)
+        && isOptionalString(data, 'description', 400)
+        && data.active is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidShopOrder(data) {
+      return data.keys().hasAll(['orderCode', 'userId', 'customerName', 'tier', 'channel', 'fulfillment', 'items', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'paymentMethod', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['orderCode', 'userId', 'memberId', 'customerName', 'tier', 'channel', 'fulfillment', 'deliveryAddress', 'items', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'paymentMethod', 'status', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.orderCode, 4, 32)
+        && isValidId(data.userId)
+        && isOptionalString(data, 'memberId', 128)
+        && isNonEmptyString(data.customerName, 2, 100)
+        && isValidPlayerTier(data.tier)
+        && data.channel in ['counter', 'online']
+        && data.fulfillment in ['counter_pickup', 'club_collect', 'delivery']
+        && isOptionalString(data, 'deliveryAddress', 300)
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 20 && data.items[0] is map
+        && isNonNegativeNumber(data.subtotalInr, 1000000)
+        && isNonNegativeNumber(data.discountInr, 1000000)
+        && isNonNegativeNumber(data.gstInr, 500000)
+        && isNonNegativeNumber(data.totalInr, 1500000)
+        && data.paymentMethod in ['upi', 'card', 'cash']
+        && data.status in ['confirmed', 'ready_for_pickup', 'dispatched', 'completed', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['name', 'category', 'priceInr', 'prepMins', 'available', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'category', 'priceInr', 'prepMins', 'available', 'updatedAt'])
+        && isNonEmptyString(data.name, 2, 100)
+        && data.category in ['drinks', 'coffee', 'snacks', 'meals']
+        && isNonNegativeNumber(data.priceInr, 50000)
+        && isNonNegativeNumber(data.prepMins, 120)
+        && data.available is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBarOrder(data) {
+      return data.keys().hasAll(['ticketCode', 'tableNumber', 'guestName', 'tier', 'items', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'kitchenStatus', 'tabStatus', 'paymentMethod', 'staffUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ticketCode', 'tableNumber', 'shiftId', 'memberId', 'userId', 'guestName', 'tier', 'items', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'kitchenStatus', 'tabStatus', 'paymentMethod', 'staffUid', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.ticketCode, 4, 24)
+        && isNonEmptyString(data.tableNumber, 1, 20)
+        && isOptionalString(data, 'shiftId', 128)
+        && isOptionalString(data, 'memberId', 128)
+        && isOptionalString(data, 'userId', 128)
+        && isNonEmptyString(data.guestName, 2, 100)
+        && isValidPlayerTier(data.tier)
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 30 && data.items[0] is map
+        && isNonNegativeNumber(data.subtotalInr, 500000)
+        && isNonNegativeNumber(data.discountInr, 500000)
+        && isNonNegativeNumber(data.gstInr, 200000)
+        && isNonNegativeNumber(data.totalInr, 700000)
+        && data.kitchenStatus in ['queued', 'preparing', 'ready', 'served']
+        && data.tabStatus in ['open', 'settled', 'voided']
+        && data.paymentMethod in ['upi', 'card', 'cash', 'unpaid']
+        && isValidId(data.staffUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBarShift(data) {
+      return data.keys().hasAll(['staffUid', 'staffName', 'dateKey', 'openingFloatInr', 'cashTotalInr', 'cardTotalInr', 'upiTotalInr', 'ordersCount', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['staffUid', 'staffName', 'dateKey', 'openingFloatInr', 'cashTotalInr', 'cardTotalInr', 'upiTotalInr', 'ordersCount', 'status', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.staffUid)
+        && isNonEmptyString(data.staffName, 2, 100)
+        && isDateKey(data.dateKey)
+        && isNonNegativeNumber(data.openingFloatInr, 500000)
+        && isNonNegativeNumber(data.cashTotalInr, 5000000)
+        && isNonNegativeNumber(data.cardTotalInr, 5000000)
+        && isNonNegativeNumber(data.upiTotalInr, 5000000)
+        && isNonNegativeNumber(data.ordersCount, 10000)
+        && data.status in ['open', 'closed']
+        && isOptionalString(data, 'notes', 400)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEnquiry(data) {
+      return data.keys().hasAll(['referenceCode', 'enquiryType', 'visitorName', 'email', 'phone', 'interestedSport', 'interestedTier', 'stage', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['referenceCode', 'enquiryType', 'visitorName', 'email', 'phone', 'interestedSport', 'interestedTier', 'preferredDate', 'preferredSlot', 'message', 'stage', 'quotedAmountInr', 'staffNotes', 'convertedMemberId', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.referenceCode, 4, 24)
+        && data.referenceCode.matches('^[A-Z0-9\\-]+$')
+        && data.enquiryType in ['trial', 'enquiry']
+        && isNonEmptyString(data.visitorName, 2, 100)
+        && isNonEmptyString(data.email, 5, 160)
+        && isNonEmptyString(data.phone, 10, 20)
+        && data.phone.matches('^[0-9+\\-\\s]+$')
+        && data.interestedSport in ['tennis', 'cricket', 'padel', 'badminton', 'all']
+        && data.interestedTier in ['gold', 'silver', 'junior', 'undecided']
+        && isOptionalString(data, 'preferredDate', 10)
+        && isOptionalString(data, 'preferredSlot', 20)
+        && isOptionalString(data, 'message', 600)
+        && data.stage in ['new', 'contacted', 'quote_sent', 'converted', 'closed']
+        && (!('quotedAmountInr' in data) || isNonNegativeNumber(data.quotedAmountInr, 1000000))
+        && isOptionalString(data, 'staffNotes', 600)
+        && isOptionalString(data, 'convertedMemberId', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['source', 'paymentMethod', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'referenceId', 'description', 'dateKey', 'recordedByUid', 'createdAt'])
+        && data.keys().hasOnly(['source', 'paymentMethod', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'referenceId', 'description', 'dateKey', 'recordedByUid', 'createdAt'])
+        && data.source in ['court', 'shop', 'bar', 'membership', 'corporate']
+        && data.paymentMethod in ['upi', 'card', 'cash', 'bank_transfer']
+        && isNonNegativeNumber(data.subtotalInr, 5000000)
+        && isNonNegativeNumber(data.discountInr, 5000000)
+        && isNonNegativeNumber(data.gstInr, 2000000)
+        && isNonNegativeNumber(data.totalInr, 7000000)
+        && isNonEmptyString(data.referenceId, 1, 128)
+        && isNonEmptyString(data.description, 2, 200)
+        && isDateKey(data.dateKey)
+        && isValidId(data.recordedByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll(['invoiceNumber', 'clientType', 'clientName', 'clientEmail', 'description', 'subtotalInr', 'gstRatePercent', 'gstInr', 'totalInr', 'dueDate', 'status', 'paymentMethod', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['invoiceNumber', 'clientType', 'clientName', 'clientEmail', 'gstin', 'userId', 'description', 'subtotalInr', 'gstRatePercent', 'gstInr', 'totalInr', 'dueDate', 'status', 'paymentMethod', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.invoiceNumber, 4, 32)
+        && data.clientType in ['member', 'corporate']
+        && isNonEmptyString(data.clientName, 2, 120)
+        && isNonEmptyString(data.clientEmail, 5, 160)
+        && isOptionalString(data, 'gstin', 20)
+        && isOptionalString(data, 'userId', 128)
+        && isNonEmptyString(data.description, 2, 240)
+        && isNonNegativeNumber(data.subtotalInr, 5000000)
+        && isNonNegativeNumber(data.gstRatePercent, 28)
+        && isNonNegativeNumber(data.gstInr, 2000000)
+        && isNonNegativeNumber(data.totalInr, 7000000)
+        && isDateKey(data.dueDate)
+        && data.status in ['draft', 'sent', 'paid', 'overdue']
+        && data.paymentMethod in ['upi', 'card', 'cash', 'bank_transfer', 'unpaid']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStaffRecord(data) {
+      return data.keys().hasAll(['fullName', 'email', 'department', 'shiftSlot', 'monthlySalaryInr', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['fullName', 'email', 'department', 'shiftSlot', 'monthlySalaryInr', 'status', 'lastPaidMonth', 'createdAt', 'updatedAt'])
+        && isNonEmptyString(data.fullName, 2, 100)
+        && isNonEmptyString(data.email, 5, 160)
+        && data.department in ['front_desk', 'bar_kitchen', 'coaching', 'maintenance', 'management']
+        && isNonEmptyString(data.shiftSlot, 3, 60)
+        && isNonNegativeNumber(data.monthlySalaryInr, 2000000)
+        && data.status in ['active', 'on_leave', 'inactive']
+        && isOptionalString(data, 'lastPaidMonth', 10)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLeaveRequest(data) {
+      return data.keys().hasAll(['staffUid', 'staffName', 'startDate', 'endDate', 'daysCount', 'reason', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['staffUid', 'staffName', 'startDate', 'endDate', 'daysCount', 'reason', 'status', 'reviewerNotes', 'createdAt', 'updatedAt'])
+        && isValidId(data.staffUid)
+        && isNonEmptyString(data.staffName, 2, 100)
+        && isDateKey(data.startDate)
+        && isDateKey(data.endDate)
+        && isNonNegativeNumber(data.daysCount, 60)
+        && isNonEmptyString(data.reason, 3, 300)
+        && data.status in ['pending', 'approved', 'rejected']
+        && isOptionalString(data, 'reviewerNotes', 300)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Collection access rules
+
+    // 1. Users (RBAC & PII Protected)
+    match /users/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (request.auth.uid == userId || isFrontDesk());
+      allow list: if isVerified() && (resource.data.uid == request.auth.uid || isOwner());
+      allow create: if isVerified()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && request.auth.uid == userId
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (incoming().role == 'member' || (isBootstrappedOwner() && incoming().role == 'owner'));
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner() && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'role', 'linkedMemberId', 'updatedAt'])) ||
+          (request.auth.uid == userId && incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 2. Members Directory (PII Protected)
+    match /members/{memberId} {
+      allow get: if isVerified() && isValidId(memberId) && (isAnyStaff() || existing().userId == request.auth.uid);
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isAnyStaff());
+      allow create: if isVerified()
+        && isValidId(memberId)
+        && isValidMember(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isFrontDesk() ||
+          (incoming().userId == request.auth.uid && incoming().status == 'active')
+        );
+      allow update: if isVerified()
+        && isValidId(memberId)
+        && isValidMember(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isFrontDesk() && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'email', 'phone', 'dob', 'tier', 'status', 'startDate', 'expiryDate', 'userId', 'totalSpentInr', 'visitsCount', 'notes', 'updatedAt'])) ||
+          (isBarStaff() && incoming().diff(existing()).affectedKeys().hasOnly(['totalSpentInr', 'visitsCount', 'updatedAt'])) ||
+          (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['totalSpentInr', 'visitsCount', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(memberId) && isOwner();
+    }
+
+    // 3. Courts (Public Catalog, Owner Managed)
+    match /courts/{courtId} {
+      allow get: if isValidId(courtId);
+      allow list: if true;
+      allow create: if isVerified()
+        && isValidId(courtId)
+        && isValidCourt(incoming())
+        && incoming().updatedAt == request.time
+        && isOwner();
+      allow update: if isVerified()
+        && isValidId(courtId)
+        && isValidCourt(incoming())
+        && incoming().updatedAt == request.time
+        && isOwner()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'sport', 'surface', 'indoor', 'hourlyRateInr', 'active', 'notes', 'updatedAt']);
+      allow delete: if isVerified() && isValidId(courtId) && isOwner();
+    }
+
+    // 4. Public Schedule (PII-Free Live Weekly Availability — Atomically Tied to Bookings/Social)
+    match /publicSchedule/{slotId} {
+      allow get: if isValidId(slotId);
+      allow list: if true;
+      allow create: if isVerified()
+        && isValidId(slotId)
+        && isValidPublicScheduleSlot(incoming())
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/courts/$(incoming().courtId))
+        && (isFrontDesk() || existsAfter(/databases/$(database)/documents/bookings/$(slotId)));
+      allow update: if isVerified()
+        && isValidId(slotId)
+        && isValidPublicScheduleSlot(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          isFrontDesk() ||
+          (exists(/databases/$(database)/documents/bookings/$(slotId))
+            && get(/databases/$(database)/documents/bookings/$(slotId)).data.userId == request.auth.uid
+            && incoming().status == 'cancelled'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+          (exists(/databases/$(database)/documents/socialSessions/$(slotId))
+            && existsAfter(/databases/$(database)/documents/socialSessions/$(slotId)/participants/$(request.auth.uid))
+            && incoming().spotsFilled == existing().spotsFilled + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['spotsFilled', 'status', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(slotId) && isFrontDesk();
+    }
+
+    // 5. Bookings (Member & Front Desk)
+    match /bookings/{bookingId} {
+      allow get: if isVerified() && isValidId(bookingId) && (existing().userId == request.auth.uid || isFrontDesk());
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isFrontDesk());
+      allow create: if isVerified()
+        && isValidId(bookingId)
+        && isValidBooking(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().status == 'confirmed'
+        && exists(/databases/$(database)/documents/courts/$(incoming().courtId))
+        && (isFrontDesk() || incoming().userId == request.auth.uid);
+      allow update: if isVerified()
+        && isValidId(bookingId)
+        && isValidBooking(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().courtId == existing().courtId
+        && incoming().userId == existing().userId
+        && incoming().updatedAt == request.time
+        && (
+          isOwner() ||
+          (isFrontDesk() && existing().status == 'confirmed' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paymentMethod', 'cancellationReason', 'updatedAt'])) ||
+          (existing().userId == request.auth.uid && existing().status == 'confirmed' && incoming().status == 'cancelled' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'cancellationReason', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 6. SlotLocks (Atomic Anti-Double-Booking Locks)
+    match /slotLocks/{lockId} {
+      allow get: if isVerified() && isValidId(lockId);
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isFrontDesk());
+      allow create: if isVerified()
+        && isValidId(lockId)
+        && isValidSlotLock(incoming())
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/courts/$(incoming().courtId))
+        && (isFrontDesk() || incoming().userId == request.auth.uid);
+      allow update: if false;
+      allow delete: if isVerified() && isValidId(lockId) && (existing().userId == request.auth.uid || isFrontDesk());
+    }
+
+    // 7. Social Sessions (Friday Night Social Play)
+    match /socialSessions/{sessionId} {
+      allow get: if isValidId(sessionId);
+      allow list: if true;
+      allow create: if isVerified()
+        && isValidId(sessionId)
+        && isValidSocialSession(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/courts/$(incoming().courtId))
+        && isFrontDesk();
+      allow update: if isVerified()
+        && isValidId(sessionId)
+        && isValidSocialSession(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isOwner() ||
+          (isFrontDesk() && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'feeInr', 'maxPlayers', 'spotsFilled', 'status', 'updatedAt'])) ||
+          (existing().status == 'open'
+            && existsAfter(/databases/$(database)/documents/socialSessions/$(sessionId)/participants/$(request.auth.uid))
+            && incoming().spotsFilled == existing().spotsFilled + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['spotsFilled', 'status', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(sessionId) && isOwner();
+
+      // Master Gate Subcollection: Participants
+      match /participants/{participantId} {
+        allow get: if isVerified() && isValidId(sessionId) && isValidId(participantId)
+          && (existing().userId == request.auth.uid || isFrontDesk());
+        allow list: if isVerified() && isValidId(sessionId)
+          && (resource.data.userId == request.auth.uid || isFrontDesk());
+        allow create: if isVerified()
+          && isValidId(sessionId)
+          && isValidId(participantId)
+          && isValidSocialParticipant(incoming())
+          && incoming().sessionId == sessionId
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/socialSessions/$(sessionId))
+          && get(/databases/$(database)/documents/socialSessions/$(sessionId)).data.status == 'open'
+          && (isFrontDesk() || (participantId == request.auth.uid && incoming().userId == request.auth.uid));
+        allow update: if false;
+        allow delete: if isVerified() && isValidId(sessionId) && isValidId(participantId)
+          && (existing().userId == request.auth.uid || isFrontDesk());
+      }
+    }
+
+    // 8. Gear Shop Products (Public Catalog, Unified Shelf Inventory)
+    match /products/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if true;
+      allow create: if isVerified()
+        && isValidId(productId)
+        && isValidProduct(incoming())
+        && incoming().updatedAt == request.time
+        && isFrontDesk();
+      allow update: if isVerified()
+        && isValidId(productId)
+        && isValidProduct(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          (isFrontDesk() && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'brand', 'priceInr', 'stock', 'lowStockThreshold', 'description', 'active', 'updatedAt'])) ||
+          (incoming().stock < existing().stock
+            && incoming().stock >= 0
+            && existing().stock - incoming().stock <= 20
+            && incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(productId) && isOwner();
+    }
+
+    // 9. Gear Shop Orders
+    match /shopOrders/{orderId} {
+      allow get: if isVerified() && isValidId(orderId) && (existing().userId == request.auth.uid || isFrontDesk());
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isFrontDesk());
+      allow create: if isVerified()
+        && isValidId(orderId)
+        && isValidShopOrder(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (isFrontDesk() || (incoming().userId == request.auth.uid && incoming().channel == 'online' && incoming().status == 'confirmed'));
+      allow update: if isVerified()
+        && isValidId(orderId)
+        && isValidShopOrder(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().userId == existing().userId
+        && incoming().updatedAt == request.time
+        && (
+          isOwner() ||
+          (isFrontDesk() && existing().status != 'cancelled' && existing().status != 'completed'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 10. Bar Menu Items
+    match /menuItems/{itemId} {
+      allow get: if isValidId(itemId);
+      allow list: if true;
+      allow create: if isVerified()
+        && isValidId(itemId)
+        && isValidMenuItem(incoming())
+        && incoming().updatedAt == request.time
+        && (isOwner() || isBarStaff());
+      allow update: if isVerified()
+        && isValidId(itemId)
+        && isValidMenuItem(incoming())
+        && incoming().updatedAt == request.time
+        && (isOwner() || isBarStaff())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'priceInr', 'prepMins', 'available', 'updatedAt']);
+      allow delete: if isVerified() && isValidId(itemId) && isOwner();
+    }
+
+    // 11. Bar Orders & Kitchen Tickets
+    match /barOrders/{orderId} {
+      allow get: if isVerified() && isValidId(orderId) && (isBarStaff() || isFrontDesk() || existing().userId == request.auth.uid);
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isBarStaff() || isFrontDesk());
+      allow create: if isVerified()
+        && isValidId(orderId)
+        && isValidBarOrder(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().staffUid == request.auth.uid
+        && isBarStaff();
+      allow update: if isVerified()
+        && isValidId(orderId)
+        && isValidBarOrder(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().staffUid == existing().staffUid
+        && incoming().updatedAt == request.time
+        && (
+          isOwner() ||
+          (isBarStaff() && existing().tabStatus == 'open' && incoming().diff(existing()).affectedKeys().hasOnly(['items', 'subtotalInr', 'discountInr', 'gstInr', 'totalInr', 'kitchenStatus', 'tabStatus', 'paymentMethod', 'updatedAt'])) ||
+          (isBarStaff() && existing().tabStatus == 'settled' && existing().kitchenStatus != 'served' && incoming().diff(existing()).affectedKeys().hasOnly(['kitchenStatus', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 12. Bar Shifts
+    match /barShifts/{shiftId} {
+      allow get: if isVerified() && isValidId(shiftId) && isBarStaff();
+      allow list: if isVerified() && (resource.data.staffUid == request.auth.uid || isOwner() || isBarStaff());
+      allow create: if isVerified()
+        && isValidId(shiftId)
+        && isValidBarShift(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().staffUid == request.auth.uid
+        && incoming().status == 'open'
+        && isBarStaff();
+      allow update: if isVerified()
+        && isValidId(shiftId)
+        && isValidBarShift(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().staffUid == existing().staffUid
+        && incoming().updatedAt == request.time
+        && (
+          isOwner() ||
+          (isBarStaff() && existing().status == 'open'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['cashTotalInr', 'cardTotalInr', 'upiTotalInr', 'ordersCount', 'status', 'notes', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+
+    // 13. Public Enquiries & Trial Session Leads (PII Protected Read, Public Create)
+    match /enquiries/{enquiryId} {
+      allow get: if isVerified() && isValidId(enquiryId) && isFrontDesk();
+      allow list: if isVerified() && isFrontDesk();
+      allow create: if isValidId(enquiryId)
+        && isValidEnquiry(incoming())
+        && incoming().stage == 'new'
+        && !('quotedAmountInr' in incoming())
+        && !('staffNotes' in incoming())
+        && !('convertedMemberId' in incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(enquiryId)
+        && isValidEnquiry(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().referenceCode == existing().referenceCode
+        && incoming().updatedAt == request.time
+        && isFrontDesk()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['stage', 'quotedAmountInr', 'staffNotes', 'convertedMemberId', 'updatedAt']);
+      allow delete: if isVerified() && isValidId(enquiryId) && isOwner();
+    }
+
+    // 14. Unified Financial Transactions Ledger
+    match /transactions/{txId} {
+      allow get: if isVerified() && isValidId(txId) && (isOwner() || existing().recordedByUid == request.auth.uid);
+      allow list: if isVerified() && (resource.data.recordedByUid == request.auth.uid || isOwner());
+      allow create: if isVerified()
+        && isValidId(txId)
+        && isValidTransaction(incoming())
+        && incoming().recordedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && (isAnyStaff() || incoming().source in ['court', 'shop', 'membership']);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // 15. Invoices (Membership & Corporate Clients)
+    match /invoices/{invoiceId} {
+      allow get: if isVerified() && isValidId(invoiceId) && (isFrontDesk() || existing().userId == request.auth.uid);
+      allow list: if isVerified() && (resource.data.userId == request.auth.uid || isFrontDesk());
+      allow create: if isVerified()
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isFrontDesk();
+      allow update: if isVerified()
+        && isValidId(invoiceId)
+        && isValidInvoice(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().invoiceNumber == existing().invoiceNumber
+        && incoming().updatedAt == request.time
+        && (
+          isOwner() ||
+          (isFrontDesk() && existing().status != 'paid'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paymentMethod', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(invoiceId) && isOwner();
+    }
+
+    // 16. Staff Directory & Payroll (Owner Only)
+    match /staffRecords/{staffId} {
+      allow get: if isVerified() && isValidId(staffId) && isOwner();
+      allow list: if isVerified() && isOwner();
+      allow create: if isVerified()
+        && isValidId(staffId)
+        && isValidStaffRecord(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isOwner();
+      allow update: if isVerified()
+        && isValidId(staffId)
+        && isValidStaffRecord(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isOwner()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'email', 'department', 'shiftSlot', 'monthlySalaryInr', 'status', 'lastPaidMonth', 'updatedAt']);
+      allow delete: if isVerified() && isValidId(staffId) && isOwner();
+    }
+
+    // 17. Leave Requests (Staff Submit, Owner Approve/Reject)
+    match /leaveRequests/{leaveId} {
+      allow get: if isVerified() && isValidId(leaveId) && (existing().staffUid == request.auth.uid || isOwner());
+      allow list: if isVerified() && (resource.data.staffUid == request.auth.uid || isOwner());
+      allow create: if isVerified()
+        && isValidId(leaveId)
+        && isValidLeaveRequest(incoming())
+        && incoming().staffUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isAnyStaff();
+      allow update: if isVerified()
+        && isValidId(leaveId)
+        && isValidLeaveRequest(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().staffUid == existing().staffUid
+        && incoming().updatedAt == request.time
+        && isOwner()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewerNotes', 'updatedAt']);
+      allow delete: if false;
+    }
+  }
+}

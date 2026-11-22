@@ -1,0 +1,6 @@
+{
+  "name": "The Champions Club",
+  "description": "Unified Sports Club Management System for The Champions Club — live court bookings across Tennis, Cricket, Padel, and Badminton, member management, unified gear shop POS, bar & kitchen orders, lead CRM, and owner financial analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
