@@ -213,7 +213,7 @@ export function AdminWorkspace({
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
       {/* Fixed 264px Operations Sidebar */}
-      <aside className="w-full lg:w-[264px] bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col justify-between shrink-0">
+      <aside className="w-full lg:w-[270px] bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col justify-between shrink-0">
         <div>
           <div className="h-16 px-4 border-b border-slate-200 flex items-center justify-between gap-2">
             <button
