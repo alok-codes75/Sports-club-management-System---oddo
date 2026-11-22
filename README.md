@@ -127,3 +127,4 @@ udaan-sports-club/
 - **Unified Gear Shop**: Counter POS and Member Online Storefront deduct from the same live `products` collection with automatic tier discounts, GST calculation, low-stock alerts, restocking, and Click & Collect / Home Delivery tracking.
 - **Clubhouse Bar POS & Kitchen Display**: Table ordering, automatic member discounts, open tabs with UPI/Card/Cash settlement, Kitchen Display status progression (`Queued → Preparing → Ready → Served`), and shift cash reconciliation.
 - **Owner Finance, GST Invoicing & HR**: Today / Week / Month revenue by stream and payment mode, GST summary, CSV export & print report, corporate/member GST invoicing, staff shift roster, monthly payroll runs, and leave approvals.
+# Sports-club-management-System---oddo
